@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Canvas – Vurdering med kommentar",
+  "version": "1.5",
+  "description": "Sender kommentar, fyller essaypoeng i NQ, setter Fullført og Status → Ingen. Ett tastetrykk i Speed Grader.",
+  "permissions": ["scripting", "activeTab", "storage"],
+  "host_permissions": [
+    "https://*.instructure.com/*",
+    "https://*.quiz-lti-dub-prod.instructure.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "kjor-godkjenn": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Send kommentar, fyll poeng, fullført og status"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.instructure.com/courses/*/gradebook/speed_grader*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png"
+    }
+  }
+}
