@@ -1,5 +1,12 @@
 # Endringslogg
 
+## v3.6 – 2026-06-06
+
+### 🎨 Design
+- Nytt ikon: grøn sirkel med kvit hake — lesbart i alle storleikar (16×16 og 48×48)
+
+---
+
 ## v3.5 – 2026-06-06
 
 ### ⚡ Ytelsesforbetringer

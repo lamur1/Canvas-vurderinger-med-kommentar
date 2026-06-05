@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas – Vurdering med kommentar",
-  "version": "1.5",
+  "version": "1.6",
   "description": "Sender kommentar, fyller essaypoeng i NQ, setter Fullført og Status → Ingen. Ett tastetrykk i Speed Grader.",
   "permissions": ["scripting", "activeTab", "storage"],
   "host_permissions": [
