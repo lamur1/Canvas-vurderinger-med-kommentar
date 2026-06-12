@@ -15,26 +15,33 @@ async function kjorGodkjenn() {
 
   const { sendKommentar = true } = await chrome.storage.local.get({ sendKommentar: true });
 
-  // STEG 1: Kommentar + NQ-deteksjon (content script, main frame)
-  const steg1 = await chrome.tabs.sendMessage(tab.id, { action: 'kjor-start', sendKommentar });
-  const erNQ = steg1?.erNQ ?? false;
+  // STEG 1: Kommentar
+  await chrome.tabs.sendMessage(tab.id, { action: 'kjor-start', sendKommentar });
+
+  // NQ-deteksjon: allFrames (NQ-inputar ligg i iframe)
+  const nqResultat = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    func: () => !!document.querySelector('input[data-automation="sdk-grading-edit-score-input"]')
+  });
+  const erNQ = nqResultat.some(r => r.result === true);
 
   if (erNQ) {
-    // STEG 2 (NQ): Fyll essaypoeng i iframe og klikk Oppdater
+    // STEG 2 (NQ): Fyll essaypoeng — må vere ferdig før Canvas frigjer UI-en
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: fyllOgOppdaterMedVenting
     });
+    // STEG 3 (NQ): Vurdering + status
+    await chrome.tabs.sendMessage(tab.id, { action: 'kjor-avslutt', erNQ: true });
+  } else {
+    // STEG 2 (ikkje-NQ): Vurdering → Fullført, Status → Ingen
+    await chrome.tabs.sendMessage(tab.id, { action: 'kjor-avslutt', erNQ: false });
   }
-
-  // STEG 3: Vurdering (viss ikkje NQ) + status (content script, main frame)
-  await chrome.tabs.sendMessage(tab.id, { action: 'kjor-avslutt', erNQ });
 
   return { ok: true };
 }
 
 // ── NQ: Fyll essaypoeng og klikk Oppdater ────────────────────────────────
-// Køyrer i iframe-konteksten via executeScript (cross-origin, kan ikkje unngåast).
 
 function fyllOgOppdaterMedVenting() {
   const harPoenggivende = function(inputElement) {
@@ -87,7 +94,26 @@ function fyllOgOppdaterMedVenting() {
 
   let count = 0;
 
-  // Hovuddokument
+  // Tell opp essay-inputs i dette frame FØR vi startar polling
+  const alleTest = document.querySelectorAll(
+    'input[data-automation="sdk-grading-edit-score-input"][placeholder="--"]'
+  );
+  let harInputs = Array.from(alleTest).some(erEssaySporsmal);
+
+  if (!harInputs) {
+    document.querySelectorAll('iframe').forEach(iframe => {
+      try {
+        const d = iframe.contentDocument || iframe.contentWindow.document;
+        if (d && Array.from(d.querySelectorAll(
+          'input[data-automation="sdk-grading-edit-score-input"][placeholder="--"]'
+        )).some(erEssaySporsmal)) harInputs = true;
+      } catch (e) {}
+    });
+  }
+
+  // Ingen essay-inputs i dette frame → ikkje vent på Oppdater-knapp
+  if (!harInputs) return { count: 0, clicked: false };
+
   const alle = document.querySelectorAll(
     'input[data-automation="sdk-grading-edit-score-input"][placeholder="--"]'
   );
@@ -99,7 +125,6 @@ function fyllOgOppdaterMedVenting() {
     count++;
   });
 
-  // iFrames
   document.querySelectorAll('iframe').forEach(iframe => {
     try {
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
@@ -121,7 +146,6 @@ function fyllOgOppdaterMedVenting() {
     } catch (e) { /* cross-origin */ }
   });
 
-  // Vent på Oppdater-knappen og klikk
   const ventOgKlikkOppdater = () => new Promise(resolve => {
     const updateTexts = ['Oppdater', 'Update', 'Uppdatera', 'Opdater'];
     const maxVentetid = 10000;
