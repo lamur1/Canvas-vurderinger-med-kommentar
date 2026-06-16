@@ -15,9 +15,6 @@ async function kjorGodkjenn() {
 
   const { sendKommentar = true } = await chrome.storage.local.get({ sendKommentar: true });
 
-  // STEG 1: Kommentar
-  await chrome.tabs.sendMessage(tab.id, { action: 'kjor-start', sendKommentar });
-
   // NQ-deteksjon: allFrames (NQ-inputar ligg i iframe)
   const nqResultat = await chrome.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
@@ -26,6 +23,8 @@ async function kjorGodkjenn() {
   const erNQ = nqResultat.some(r => r.result === true);
 
   if (erNQ) {
+    // STEG 1 (NQ): Kommentar
+    await chrome.tabs.sendMessage(tab.id, { action: 'kjor-start', sendKommentar });
     // STEG 2 (NQ): Fyll essaypoeng — må vere ferdig før Canvas frigjer UI-en
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
@@ -34,8 +33,8 @@ async function kjorGodkjenn() {
     // STEG 3 (NQ): Vurdering + status
     await chrome.tabs.sendMessage(tab.id, { action: 'kjor-avslutt', erNQ: true });
   } else {
-    // STEG 2 (ikkje-NQ): Vurdering → Fullført, Status → Ingen
-    await chrome.tabs.sendMessage(tab.id, { action: 'kjor-avslutt', erNQ: false });
+    // Ikkje-NQ: kommentar + vurdering parallelt, status sist
+    await chrome.tabs.sendMessage(tab.id, { action: 'kjor-parallell', sendKommentar });
   }
 
   return { ok: true };

@@ -24,9 +24,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     kjorAvslutt(msg.erNQ).then(sendResponse);
     return true;
   }
+  if (msg.action === 'kjor-parallell') {
+    kjorParallell(msg.sendKommentar).then(sendResponse);
+    return true;
+  }
 });
 
-// ── Hovudsekvens ──────────────────────────────────────────────────────────
+// ── NQ-kompatibel sekvens ─────────────────────────────────────────────────
 
 async function kjorStart(sendKommentar) {
   oppdaterCache();
@@ -41,7 +45,23 @@ async function kjorAvslutt(erNQ) {
   return { ok: true };
 }
 
-// ── Kommentar ─────────────────────────────────────────────────────────────
+// ── Parallell sekvens (ikkje-NQ) ──────────────────────────────────────────
+
+async function kjorParallell(sendKommentar) {
+  oppdaterCache();
+
+  // Kommentar og vurdering startar samtidig
+  await Promise.all([
+    sendKommentar ? sendKommentarOgVentPaBekreftelse() : Promise.resolve(false),
+    settVurdering()
+  ]);
+
+  // Status settast alltid sist — etter at Canvas har prosessert kommentaren
+  await settStatus();
+  return { ok: true };
+}
+
+// ── Kommentar (NQ-fallback, rask) ────────────────────────────────────────
 
 function sendKommentarSmart() {
   return new Promise(resolve => {
@@ -73,6 +93,70 @@ function sendKommentarSmart() {
     } else {
       setTimeout(resolve, 1000);
     }
+  });
+}
+
+// ── Kommentar med API-bekreftelse (ikkje-NQ) ─────────────────────────────
+//
+// Lyttar på knappeattributtar for å vite nøyaktig når Canvas har fått svar
+// frå API-et og re-rendert. Berre då er det trygt å setje status → Ingen.
+//
+// Primær:   MutationObserver på knappen (deaktivert under kall → aktiv etter svar)
+// Sekundær: Textarea tømmes + 2.5s buffer (om Canvas ikkje deaktiverer knappen)
+// Fallback: 8s hard grense
+
+function sendKommentarOgVentPaBekreftelse() {
+  return new Promise(resolve => {
+    const btn = _cache.kommentarKnapp ||
+                document.querySelector('[data-testid="submit-comment-button"]');
+
+    if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+      return resolve(false);
+    }
+
+    let resolved = false;
+    const done = () => {
+      if (resolved) return;
+      resolved = true;
+      btnObserver.disconnect();
+      clearTimeout(hardFallback);
+      resolve(true);
+    };
+
+    // Primær: knapp deaktiveres under API-kall, aktiveres etter svar
+    let harVaertDeaktivert = false;
+    const btnObserver = new MutationObserver(() => {
+      const erDeaktivert = btn.disabled || btn.getAttribute('aria-disabled') === 'true';
+      if (erDeaktivert) {
+        harVaertDeaktivert = true;
+      } else if (harVaertDeaktivert) {
+        done();
+      }
+    });
+    btnObserver.observe(btn, { attributes: true });
+
+    // Sekundær: textarea tømmes + 2.5s buffer
+    let textarea = null;
+    let el = btn.parentElement;
+    for (let i = 0; i < 8 && el; i++, el = el.parentElement) {
+      textarea = el.querySelector('textarea');
+      if (textarea) break;
+    }
+
+    if (textarea) {
+      const poll = setInterval(() => {
+        if (resolved) { clearInterval(poll); return; }
+        if (textarea.value.trim() === '') {
+          clearInterval(poll);
+          setTimeout(done, 2500);
+        }
+      }, 80);
+    }
+
+    // Hard fallback
+    var hardFallback = setTimeout(done, 8000);
+
+    btn.click();
   });
 }
 
